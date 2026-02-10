@@ -1,7 +1,7 @@
-For installing dependencies:
+# For installing dependencies:
 
 
-Jarvis.py
+# Jarvis.py
 
 
 python -m venv .venv
@@ -11,12 +11,12 @@ sau
 
 .venv\Scripts\activate      # Windows
 
-uv pip install groq python-dotenv mcp duckduckgo-search
+## uv pip install groq python-dotenv mcp duckduckgo-search
 
 
 
-Jarvis_voce.py
+# Jarvis_voce.py
 
 Pe lângă ce am nevoie pentru Jarvis.py se daugă:
 
-uv pip install groq python-dotenv mcp pyttsx3 SpeechRecognition pyaudio
+## uv pip install groq python-dotenv mcp pyttsx3 SpeechRecognition pyaudio
