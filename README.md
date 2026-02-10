@@ -6,7 +6,9 @@ Jarvis.py
 
 python -m venv .venv
 source .venv/bin/activate   # Linux / macOS
-# sau
+
+sau
+
 .venv\Scripts\activate      # Windows
 
 uv pip install groq python-dotenv mcp duckduckgo-search
