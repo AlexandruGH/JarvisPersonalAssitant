@@ -5,16 +5,6 @@
                     "args": ["-u", "simple_web_search_mcp_server.py"],
                     "description": "Căutare web gratuită via DuckDuckGo"
                 },
-                "fetch": {
-                    "command": "python", 
-                    "args": ["-m", "mcp_server_fetch"],
-                    "description": "Extrage conținut din URL-uri"
-                },
-                "time": {
-                    "command": "python",
-                    "args": ["-m", "mcp_server_time"],
-                    "description": "Informații despre timp și fusuri orare"
-                },
                 "thinking": {
                     "command": "python",
                     "args": ["-m", "sequential_thinking"],
