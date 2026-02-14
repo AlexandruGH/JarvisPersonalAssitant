@@ -93,6 +93,26 @@ class JarvisMVP:
                     print(f"   ❌ Eroare la conectarea serverului {server_name}: {e}")
                     continue
             
+            # --- MODIFICARE: Adăugăm Tool-ul Nativ de Clarificare ---
+            self.available_tools.append({
+                "type": "function",
+                "function": {
+                    "name": "ask_user",
+                    "description": "Folosește acest tool când ai nevoie de clarificări, detalii suplimentare sau confirmări de la utilizator. Oprește execuția pentru a primi input.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "question": {
+                                "type": "string", 
+                                "description": "Întrebarea specifică pentru utilizator"
+                            }
+                        },
+                        "required": ["question"]
+                    }
+                }
+            })
+            # --------------------------------------------------------
+
             print(f"\n🤖 JARVIS MVP Online")
             print(f"   Tool-uri active: {len(self.available_tools)}")
             print("   (Scrie 'exit' pentru a ieși)\n")
@@ -104,25 +124,21 @@ class JarvisMVP:
         
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-        system_prompt = f"""Ești JARVIS, un asistent AI avansat conectat la unelte externe.
+        # --- MODIFICARE: Prompt Actualizat pentru a încuraja întrebările ---
+        system_prompt = f"""Ești JARVIS, un asistent AI avansat.
                 DATA CURENTĂ: {current_time}
 
-                PROTOCOL DE OPERARE (OBLIGATORIU):
+                PROTOCOL DE OPERARE:
+                1. CLARIFICARE (CRITIC): Dacă cererea utilizatorului este vagă (ex: "fă un fișier", "caută asta"), NU GHICI. Folosește tool-ul `ask_user` pentru a întreba detalii (nume fișier, context, etc.).
+                2. GÂNDIRE PAS-CU-PAS: Descompune problema.
+                3. EXECUȚIE: Folosește tool-urile disponibile (search, filesystem).
+                4. VALIDARE: Verifică rezultatele înainte de a răspunde final.
 
-                1. GÂNDIRE PAS-CU-PAS: Pentru cereri complexe, descompune în pași mici.
-                2. SCEPTICISM RADICAL: Folosește TOOL-urile disponibile pentru date reale, nu cunoștințe interne.
-                3. EXECUȚIE ITERATIVĂ: 
-                - Fă research cu tool-uri (web_search, etc.)
-                - Analizează rezultatele
-                - Dacă e nevoie de mai multe date, apelează alte tool-uri
-                - Abia apoi formulează răspunsul final
-                4. PERSISTENȚĂ: Continuă să folosești tool-uri până când ai informații complete pentru a răspunde.
-                5. SALVARE: Dacă utilizatorul cere salvare, folosește tool-ul write_file DOAR după ce ai adunat toate informațiile necesare.
-
-                REGULI CRITICE:
-                - NU răspunde "am salvat în fișier" dacă fișierul e gol sau conține doar template-uri.
-                - Asigură-te că fișierul conține date concrete, prețuri reale, detalii specifice.
-                - Dacă tool-ul write_file e apelat, conținutul trebuie să fie complet, nu placeholder-e."""
+                REGULI:
+                - Nu inventa informații.
+                - Dacă folosești `ask_user`, așteaptă răspunsul, nu continua să ghicești.
+                - Răspunde în limba română.
+                """
 
         messages = [
             {"role": "system", "content": system_prompt}
@@ -151,7 +167,7 @@ class JarvisMVP:
                             messages=messages,
                             tools=self.available_tools if self.available_tools else None,
                             tool_choice="auto",
-                            temperature=0.7
+                            temperature=0.6 # Temperatură ușor mai mică pentru precizie
                         )
                     except Exception as e:
                         print(f"❌ Eroare API: {e}")
@@ -159,7 +175,6 @@ class JarvisMVP:
 
                     message = response.choices[0].message
                     
-                    # Construim mesajul curat pentru istoric
                     clean_msg = {"role": message.role}
                     if message.content:
                         clean_msg["content"] = message.content
@@ -183,7 +198,6 @@ class JarvisMVP:
                     if message.tool_calls:
                         print(f"\n⚡ [Pasul {turn_count}] Execut PARALEL {len(message.tool_calls)} acțiuni...")
                         
-                        # Execuție paralelă
                         tasks = []
                         tool_calls_ordered = []
 
@@ -194,12 +208,29 @@ class JarvisMVP:
                             except json.JSONDecodeError:
                                 args = {}
                             
-                            # Trunchiem args pentru afișare
                             args_str = str(args)[:80] + "..." if len(str(args)) > 80 else str(args)
                             print(f"   [🚀 START] {tool_name} -> {args_str}")
                             
-                            tool_info = self.tool_registry.get(tool_name)
-                            if tool_info:
+                            # --- MODIFICARE: Interceptare tool ask_user ---
+                            if tool_name == "ask_user":
+                                question = args.get("question", "Am nevoie de clarificări.")
+                                print(f"\n❓ JARVIS ÎNTREABĂ: {question}")
+                                # Oprim execuția asincronă pentru a lua input de la tastatură
+                                user_answer = input("   Răspunsul tău: ")
+                                
+                                # Creăm o funcție fake async pentru a păstra structura listei de task-uri
+                                async def return_user_input():
+                                    # Simulăm structura de răspuns MCP
+                                    return type('obj', (object,), {
+                                        "content": [type('obj', (object,), {"text": json.dumps({"user_response": user_answer})})]
+                                    })()
+                                
+                                tasks.append(return_user_input())
+                                tool_calls_ordered.append(tool_call)
+                            
+                            # Logica standard pentru MCP tools
+                            elif self.tool_registry.get(tool_name):
+                                tool_info = self.tool_registry.get(tool_name)
                                 tasks.append(tool_info["session"].call_tool(tool_name, arguments=args))
                                 tool_calls_ordered.append(tool_call)
                             else:
@@ -210,13 +241,12 @@ class JarvisMVP:
                                 tasks.append(fake_error())
                                 tool_calls_ordered.append(tool_call)
 
-                        # Executăm toate task-urile în paralel
+                        # Executăm task-urile (inclusiv pe cel fake de user input)
                         if tasks:
                             results = await asyncio.gather(*tasks, return_exceptions=True)
                         else:
                             results = []
 
-                        # Procesăm rezultatele
                         for i, result in enumerate(results):
                             tool_call = tool_calls_ordered[i]
                             tool_name = tool_call.function.name
@@ -226,14 +256,13 @@ class JarvisMVP:
                                 print(f"   [❌ FAIL] {tool_name}: {str(result)[:50]}")
                                 content = json.dumps({"error": error_msg})
                             else:
-                                # Extragem conținutul din rezultatul MCP
                                 if hasattr(result, 'content') and result.content:
                                     content = result.content[0].text
-                                    # Încercăm să parsăm ca JSON pentru validare
                                     try:
                                         parsed = json.loads(content)
-                                        # Dacă e un rezultat de search, extragem info utilă
-                                        if isinstance(parsed, dict) and 'results' in parsed:
+                                        if tool_name == "ask_user":
+                                            summary = "[ask_user] Răspuns primit"
+                                        elif isinstance(parsed, dict) and 'results' in parsed:
                                             summary = f"[{tool_name}] Găsit {len(parsed['results'])} rezultate"
                                         else:
                                             summary = f"[{tool_name}] Success"
@@ -252,16 +281,15 @@ class JarvisMVP:
                             })
                             
                     else:
-                        # Nu mai sunt tool calls, avem răspuns final
                         if message.content:
                             print(f"\n🤖 JARVIS: {message.content}")
                         else:
-                            print(f"\n🤖 JARVIS: [Nu am primit conținut în răspuns]")
+                            print(f"\n🤖 JARVIS: [Aștept instrucțiuni...]")
                         final_response_shown = True
                         break
                         
                 if turn_count >= max_turns:
-                    print("\n⚠️  Atenție: Număr maxim de iterații atins. Posibil ciclu infinit sau task prea complex.")
+                    print("\n⚠️  Atenție: Limita de pași atinsă.")
                     
             except KeyboardInterrupt:
                 print("\n\n👋 La revedere!")
